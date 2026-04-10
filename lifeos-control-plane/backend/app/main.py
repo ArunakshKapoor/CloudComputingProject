@@ -7,8 +7,19 @@ from app.db.models.user import User
 from app.db.models.workflow import Base
 from app.db.session import SessionLocal, engine
 from app.routers import approvals, connectors, evaluations, health, memory, policies, traces, workflows
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="LifeOS Control Plane API", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(workflows.router, prefix="/api/v1")
 app.include_router(approvals.router, prefix="/api/v1")
