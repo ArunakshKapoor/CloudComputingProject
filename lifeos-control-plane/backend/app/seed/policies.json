@@ -1,0 +1,4 @@
+[
+  {"action_type":"github.fetch_issues","risk_level":"LOW","requires_approval":false,"allowed":true,"reason_template":"Read-only GitHub fetch allowed"},
+  {"action_type":"email.send","risk_level":"HIGH","requires_approval":false,"allowed":false,"reason_template":"Sending is blocked by default"}
+]

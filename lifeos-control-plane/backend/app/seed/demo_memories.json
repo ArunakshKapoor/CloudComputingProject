@@ -1,0 +1,5 @@
+[
+  {"key":"preferred_meeting_time","value":"Afternoons on weekdays","source":"seed","confidence":0.95},
+  {"key":"email_tone","value":"Polite and concise","source":"seed","confidence":0.92},
+  {"key":"task_style","value":"Checklist with short action verbs","source":"seed","confidence":0.89}
+]
