@@ -12,3 +12,6 @@ class ApprovalOut(BaseModel):
     step_id: str
     status: str
     decision_comment: str
+    step_name: str | None = None
+    action_type: str | None = None
+    risk_level: str | None = None

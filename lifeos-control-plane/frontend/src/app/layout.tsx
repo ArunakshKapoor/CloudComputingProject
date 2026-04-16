@@ -3,7 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html>
+    <html lang="en" className="light" suppressHydrationWarning>
       <body>
         <AppShell>{children}</AppShell>
       </body>

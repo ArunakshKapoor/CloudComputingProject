@@ -7,19 +7,51 @@ class GitHubConnector(BaseConnector):
     name = "github"
 
     def health_check(self) -> dict:
-        return {"name": self.name, "mode": "live-readonly" if settings.github_token else "mock", "status": "ok"}
+        return {
+            "name": self.name,
+            "mode": "live-readonly" if settings.github_token else "mock",
+            "status": "ok",
+        }
 
     def simulate(self, action_type: str, payload: dict) -> dict:
-        return {"action": action_type, "preview": "Would fetch latest open issues from repo."}
+        repo = payload.get("repo_name", "octocat/hello-world")
+        return {
+            "action": action_type,
+            "repo_name": repo,
+            "preview": f"Would fetch latest open issues from repo '{repo}'.",
+        }
 
     def execute(self, action_type: str, payload: dict) -> dict:
+        repo = payload.get("repo_name", "octocat/hello-world")
+
+        if action_type != "github.fetch_issues":
+            return {
+                "status": "ok",
+                "mode": "mock",
+                "repo_name": repo,
+                "summary": "Unsupported GitHub action",
+            }
+
         if not settings.github_token:
-            return {"issues": [{"title": "Mock: flaky test"}, {"title": "Mock: optimize API"}]}
-        if action_type == "github.fetch_issues":
-            repo = payload.get("repo_name", "octocat/hello-world")
-            headers = {"Authorization": f"Bearer {settings.github_token}"}
-            with httpx.Client(timeout=10) as client:
-                res = client.get(f"https://api.github.com/repos/{repo}/issues", headers=headers)
-                res.raise_for_status()
-            return {"issues": res.json()[:5]}
-        return {"summary": "Unsupported action"}
+            return {
+                "status": "ok",
+                "mode": "mock",
+                "repo_name": repo,
+                "issues": [
+                    {"title": f"Mock: flaky test in {repo}"},
+                    {"title": f"Mock: optimize API for {repo}"},
+                ],
+            }
+
+        headers = {"Authorization": f"Bearer {settings.github_token}"}
+        with httpx.Client(timeout=10) as client:
+            res = client.get(f"https://api.github.com/repos/{repo}/issues", headers=headers)
+            res.raise_for_status()
+
+        issues = res.json()[:5]
+        return {
+            "status": "ok",
+            "mode": "live-readonly",
+            "repo_name": repo,
+            "issues": issues,
+        }
