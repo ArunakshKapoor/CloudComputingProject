@@ -164,6 +164,7 @@ These evaluations are still **prototype-grade**, but they are more meaningful th
 
 ```bash
 cp .env.example .env
+```
 
 ### Run backend
 ```bash
