@@ -14,18 +14,50 @@ export default function ApprovalsPage() {
   }, [id]);
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold mb-4">Approval Center</h1>
-      <div className="space-y-3">
+    <div className="space-y-6">
+      <div>
+        <h1 className="page-title">Approval Center</h1>
+        <p className="page-subtitle mt-1">
+          Review high-risk actions before execution.
+        </p>
+      </div>
+
+      <div className="space-y-4">
         {rows.map((a) => (
           <div key={a.id} className="card">
-            <div>Step: {a.step_id}</div>
-            <div>Status: {a.status}</div>
-            <div className="flex gap-2 mt-2">
-              <button className="px-3 py-1 bg-green-600 text-white rounded" onClick={async () => { await api.decideApproval(a.step_id, "APPROVED"); load(); }}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-base font-semibold text-text">
+                  {a.step_name || "Unnamed approval step"}
+                </div>
+                <div className="mt-1 text-sm text-muted">
+                  {a.action_type || a.step_id}
+                </div>
+              </div>
+
+              <div className="app-badge border bg-surfaceAlt text-text">
+                {a.risk_level || "UNKNOWN"} · {a.status}
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                className="app-button-primary"
+                onClick={async () => {
+                  await api.decideApproval(a.step_id, "APPROVED");
+                  load();
+                }}
+              >
                 Approve
               </button>
-              <button className="px-3 py-1 bg-red-600 text-white rounded" onClick={async () => { await api.decideApproval(a.step_id, "REJECTED"); load(); }}>
+
+              <button
+                className="app-button-secondary"
+                onClick={async () => {
+                  await api.decideApproval(a.step_id, "REJECTED");
+                  load();
+                }}
+              >
                 Reject
               </button>
             </div>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -10,121 +11,203 @@ class PlannedStep:
     action_type: str
     depends_on: list[int]
 
+
 def has_any(text: str, phrases: list[str]) -> bool:
     return any(phrase in text for phrase in phrases)
 
 
-class MockPlannerProvider:
-    """Deterministic planner for demo prompts with basic intent detection."""
+def get_memory(memory_context: dict | None, key: str, default=None):
+    if not memory_context:
+        return default
+    value = memory_context.get(key, default)
+    return value if value not in (None, "") else default
 
-    def plan(self, request_text: str) -> list[PlannedStep]:
+
+def extract_repo_name(text: str, memory_context: dict | None = None) -> str | None:
+    remembered_repo = get_memory(memory_context, "github_repo")
+    if remembered_repo:
+        return remembered_repo
+
+    match = re.search(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\b", text)
+    return match.group(1) if match else None
+
+
+def extract_recipient(text: str, memory_context: dict | None = None) -> str:
+    remembered_recipient = get_memory(memory_context, "default_email_recipient")
+    if remembered_recipient:
+        return remembered_recipient
+
+    match = re.search(r"\bto ([a-zA-Z][a-zA-Z\s]+)", text)
+    if match:
+        candidate = match.group(1).strip()
+        candidate = re.split(r"\b(confirming|about|regarding|for|tomorrow|next)\b", candidate)[0].strip()
+        if candidate:
+            return candidate
+
+    if "professor" in text:
+        return "professor"
+    if "team" in text:
+        return "team"
+
+    return "recipient"
+
+
+def extract_event_time_hint(text: str, memory_context: dict | None = None) -> str:
+    remembered_time = get_memory(memory_context, "preferred_event_time")
+    if remembered_time:
+        return remembered_time
+
+    patterns = [
+        r"(tomorrow at [^,.]+)",
+        r"(today at [^,.]+)",
+        r"(next monday at [^,.]+)",
+        r"(next tuesday at [^,.]+)",
+        r"(next wednesday at [^,.]+)",
+        r"(next thursday at [^,.]+)",
+        r"(next friday at [^,.]+)",
+        r"(next week[^,.]*)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
+
+    return "Tomorrow at 9 AM"
+
+
+def extract_event_title(text: str, memory_context: dict | None = None) -> str:
+    remembered_title = get_memory(memory_context, "default_event_title")
+    if remembered_title:
+        return remembered_title
+
+    if "project sync" in text:
+        return "Project Sync"
+    if "meeting" in text:
+        return "Meeting"
+    if "interview" in text:
+        return "Interview"
+
+    return "Scheduled Event"
+
+
+def mentions_fixed_time(text: str) -> bool:
+    return has_any(
+        text,
+        [
+            "tomorrow at",
+            "today at",
+            "next monday at",
+            "next tuesday at",
+            "next wednesday at",
+            "next thursday at",
+            "next friday at",
+            " at 9",
+            " at 10",
+            " at 11",
+            " at 12",
+            " at 1",
+            " at 2",
+            " at 3",
+            " at 4",
+            " at 5",
+            " at 6",
+            " at 7",
+            " at 8",
+            " am",
+            " pm",
+        ],
+    )
+
+
+class MockPlannerProvider:
+    """Deterministic planner with richer intent extraction and memory-aware naming."""
+
+    def plan(self, request_text: str, memory_context: dict | None = None) -> list[PlannedStep]:
         text = " ".join(request_text.lower().split())
         steps: list[PlannedStep] = []
 
-        # --------
-        # Email intent
-        # --------
-        wants_email = has_any(text, ["email", "mail"])
-        wants_send_email = wants_email and has_any(
-            text,
-            [
-                "send an email",
-                "send email",
-                "send the email",
-                "email to",
-                "mail to",
-                "send ",
-            ],
-        )
-        wants_draft_email = wants_email and has_any(
-            text,
-            [
-                "draft",
-                "write an email",
-                "compose",
-                "follow-up email",
-                "follow up email",
-            ],
-        )
+        repo_name = extract_repo_name(text, memory_context)
+        recipient = extract_recipient(text, memory_context)
+        preferred_meeting_time = get_memory(memory_context, "preferred_meeting_time", "Afternoons on weekdays")
+        event_title = extract_event_title(text, memory_context)
+        event_time_hint = extract_event_time_hint(text, memory_context)
 
         # --------
-        # Calendar intent
+        # Intents
         # --------
-        wants_calendar = has_any(text, ["calendar", "meeting", "slot", "event", "schedule"])
+        asks_email = has_any(text, ["email", "mail", "follow-up", "follow up"])
+        asks_send = asks_email and has_any(text, ["send", "email to", "mail to"])
+        asks_draft = asks_email and has_any(text, ["draft", "write", "compose", "follow-up", "follow up"])
 
-        wants_create_event = has_any(
-            text,
-            [
-                "create a calendar event",
-                "create calendar event",
-                "calendar event",
-                "create an event",
-                "create event",
-                "schedule a meeting",
-                "schedule meeting",
-                "book a meeting",
-                "book meeting",
-            ],
-        ) or (
-            wants_calendar
-            and (
-                "tomorrow at" in text
-                or "today at" in text
-                or "next monday at" in text
-                or "next tuesday at" in text
-                or "next wednesday at" in text
-                or "next thursday at" in text
-                or "next friday at" in text
-                or " at 9" in text
-                or " at 10" in text
-                or " at 11" in text
-                or " at 12" in text
-                or " at 1" in text
-                or " at 2" in text
-                or " at 3" in text
-                or " at 4" in text
-                or " at 5" in text
-                or " at 6" in text
-                or " at 7" in text
-                or " at 8" in text
+        asks_calendar = has_any(text, ["calendar", "meeting", "slot", "slots", "event", "schedule", "availability"])
+        asks_create_event = asks_calendar and (
+            has_any(
+                text,
+                [
+                    "create a calendar event",
+                    "create calendar event",
+                    "calendar event",
+                    "create event",
+                    "schedule a meeting",
+                    "schedule meeting",
+                    "book a meeting",
+                    "book meeting",
+                ],
             )
+            or mentions_fixed_time(text)
         )
 
-        wants_suggest_slots = wants_calendar and has_any(
+        asks_suggest_slots = asks_calendar and has_any(
             text,
             [
                 "suggest",
-                "slot",
                 "slots",
                 "availability",
+                "meeting slots",
                 "available time",
-                "meeting time",
+                "two meeting slots",
             ],
         )
 
-        # --------
-        # Task intent
-        # --------
-        wants_tasks = has_any(text, ["task", "tasks", "checklist", "todo", "to-do"])
+        asks_tasks = has_any(
+            text,
+            [
+                "task",
+                "tasks",
+                "checklist",
+                "todo",
+                "to-do",
+                "action items",
+                "next steps",
+            ],
+        )
 
-        # --------
-        # GitHub intent
-        # --------
-        wants_github = has_any(text, ["github", "repo", "repository", "issue", "issues"])
+        asks_github = has_any(text, ["github", "repo", "repository", "issue", "issues"]) or (
+            repo_name is not None and has_any(text, ["project", "codebase", "bug", "release"])
+        )
+
+        asks_issue_summary = asks_github and has_any(
+            text,
+            [
+                "summarize",
+                "summary",
+                "top open issues",
+                "open issues",
+                "issues",
+                "bugs",
+            ],
+        )
 
         # --------
         # Build steps
         # --------
 
-        # Email logic:
-        # - If the user explicitly wants to send an email, create BOTH a draft step and a send step.
-        #   This preserves previewability while also triggering governance on the send action.
-        # - If the user only wants a draft, create only the draft step.
-        if wants_send_email:
+        if asks_send:
             draft_idx = len(steps)
             steps.append(
                 PlannedStep(
-                    name="Draft confirmation email",
+                    name=f"Draft confirmation email to {recipient}",
                     service="email",
                     action_type="email.draft",
                     depends_on=[],
@@ -132,58 +215,57 @@ class MockPlannerProvider:
             )
             steps.append(
                 PlannedStep(
-                    name="Send confirmation email",
+                    name=f"Send confirmation email to {recipient}",
                     service="email",
                     action_type="email.send",
                     depends_on=[draft_idx],
                 )
             )
-        elif wants_draft_email or wants_email:
+        elif asks_draft or asks_email:
             steps.append(
                 PlannedStep(
-                    name="Draft follow-up email",
+                    name=f"Draft follow-up email to {recipient}",
                     service="email",
                     action_type="email.draft",
                     depends_on=[],
                 )
             )
 
-        # Calendar logic:
-        # - Explicit event creation or fixed-time scheduling should map to HIGH-risk create_event
-        # - Otherwise, slot-finding remains a medium-risk suggestion flow
-        if wants_create_event:
+        if asks_create_event:
             steps.append(
                 PlannedStep(
-                    name="Create calendar event",
+                    name=f"Create calendar event: {event_title} ({event_time_hint})",
                     service="calendar",
                     action_type="calendar.create_event",
                     depends_on=[],
                 )
             )
-        elif wants_suggest_slots or wants_calendar:
+        elif asks_suggest_slots or asks_calendar:
             steps.append(
                 PlannedStep(
-                    name="Suggest meeting slots",
+                    name=f"Suggest meeting slots ({preferred_meeting_time})",
                     service="calendar",
                     action_type="calendar.suggest_slots",
                     depends_on=[],
                 )
             )
 
-        if wants_tasks:
+        if asks_tasks:
+            task_name = "Create action checklist" if has_any(text, ["action items", "next steps"]) else "Create checklist"
             steps.append(
                 PlannedStep(
-                    name="Create checklist",
+                    name=task_name,
                     service="task",
                     action_type="task.create_checklist",
                     depends_on=[],
                 )
             )
 
-        if wants_github:
+        if asks_issue_summary or asks_github:
+            repo_label = repo_name or "configured repository"
             steps.append(
                 PlannedStep(
-                    name="Summarize open issues",
+                    name=f"Summarize open issues in {repo_label}",
                     service="github",
                     action_type="github.fetch_issues",
                     depends_on=[],
